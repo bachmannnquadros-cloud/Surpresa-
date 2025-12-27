@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Dedinha GamePlays</title>
+
+<style>
+  html, body{
+    margin:0; padding:0;
+    width:100%; height:100%;
+    overflow:hidden;
+    background:#111;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-family: Arial, Helvetica, sans-serif;
+    color:#fff;
+  }
+
+  /* Área clicável central */
+  #stage {
+    position: relative;
+    width: 420px;
+    height: 420px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor: pointer;
+  }
+
+  img, video{
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform: translate(-50%, -50%);
+    max-width:100%;
+    max-height:100%;
+    user-select:none;
+    -webkit-user-drag:none;
+    transition: opacity 1.5s ease, transform 0.6s ease;
+  }
+
+  #caixa{
+    opacity:1;
+    z-index: 10;
+    pointer-events: none; /* o clique é capturado pelo #stage */
+  }
+
+  #amiga{
+    opacity:0;
+    z-index: 20;
+    pointer-events:none;
+  }
+
+  .rotate{
+    transform: translate(-50%, -50%) rotate(90deg);
+  }
+
+  /* Vídeo */
+  #video{
+    display:none;
+    z-index: 30;
+    pointer-events:none;
+  }
+
+  /* Confete */
+  .confetti{
+    position:fixed;
+    width:8px;
+    height:8px;
+    top:-10px;
+    animation: fall linear forwards;
+    z-index: 999;
+  }
+  @keyframes fall { to { transform: translateY(110vh) rotate(360deg); } }
+
+  /* Mensagem final isolada */
+  #message{
+    position:fixed;
+    top:50%;
+    left:50%;
+    transform:translate(-50%, -50%);
+    text-align:center;
+    font-size:24px;
+    display:none;
+    z-index: 2000;
+    width:min(900px, 92vw);
+    line-height:1.25;
+  }
+
+  #retry{
+    display:inline-block;
+    margin-left:10px;
+    padding:10px 18px;
+    background:#ff0055;
+    font-weight:bold;
+    border-radius:6px;
+    cursor:pointer;
+    user-select:none;
+  }
+  #retry:hover{ background:#ff3366; }
+
+  /* Debug de erro */
+  #debug {
+    position: fixed;
+    bottom: 10px;
+    left: 10px;
+    font-size: 12px;
+    opacity: 0.85;
+    background: rgba(0,0,0,0.5);
+    padding: 8px 10px;
+    border-radius: 6px;
+    display: none;
+    z-index: 5000;
+    max-width: 92vw;
+    white-space: pre-wrap;
+  }
+</style>
+</head>
+
+<body>
+
+<div id="stage" title="Clique para iniciar">
+  <img id="caixa" src="caixa.png" alt="Caixa">
+  <img id="amiga" src="amiga.png" alt="Amiga">
+  <video id="video" src="video.mp4" playsinline></video>
+</div>
+
+<div id="message">
+  <div>🔥 <strong>BRUTAL!!! ACABOU PRO BETA!!!</strong> 🔥</div>
+  <div style="margin-top:12px;">
+    Clique aqui <span id="retry">⬜</span> para dar uma segunda chance de marcar o TD para a Dedinha GamePlays
+  </div>
+</div>
+
+<div id="debug"></div>
+
+<audio id="audio" src="audio.mp3" preload="auto"></audio>
+
+<script>
+(() => {
+  const stage = document.getElementById('stage');
+  const caixa = document.getElementById('caixa');
+  const amiga = document.getElementById('amiga');
+  const audio = document.getElementById('audio');
+  const video = document.getElementById('video');
+  const message = document.getElementById('message');
+  const retry = document.getElementById('retry');
+  const debug = document.getElementById('debug');
+
+  let confettiInterval = null;
+  let rotateTimeout = null;
+  let startedOnce = false;
+
+  function showDebug(msg){
+    debug.style.display = 'block';
+    debug.textContent = msg;
+  }
+
+  window.addEventListener('error', (e) => {
+    showDebug("ERRO JS:\n" + (e.message || e.error) + "\n" + (e.filename || "") + ":" + (e.lineno || ""));
+  });
+
+  function clearTimers(){
+    if (confettiInterval) clearInterval(confettiInterval);
+    if (rotateTimeout) clearTimeout(rotateTimeout);
+    confettiInterval = null;
+    rotateTimeout = null;
+  }
+
+  function startConfetti(){
+    confettiInterval = setInterval(() => {
+      const c = document.createElement('div');
+      c.className = 'confetti';
+      c.style.left = (Math.random()*100) + 'vw';
+      c.style.backgroundColor = `hsl(${Math.random()*360},100%,50%)`;
+      c.style.animationDuration = (2 + Math.random()*3) + 's';
+      document.body.appendChild(c);
+      setTimeout(() => c.remove(), 5500);
+    }, 100);
+  }
+
+  function stopConfetti(){
+    if (confettiInterval) clearInterval(confettiInterval);
+    confettiInterval = null;
+  }
+
+  function hideStageMedia(){
+    caixa.style.display = 'none';
+    amiga.style.display = 'none';
+    video.style.display = 'none';
+  }
+
+  function resetToBox(){
+    message.style.display = 'none';
+    hideStageMedia();
+
+    // caixa visível
+    caixa.style.display = 'block';
+    caixa.style.opacity = 1;
+
+    // amiga pronta mas invisível
+    amiga.style.display = 'block';
+    amiga.style.opacity = 0;
+    amiga.classList.remove('rotate');
+
+    // vídeo parado
+    video.pause();
+    video.currentTime = 0;
+    video.style.display = 'none';
+
+    // áudio parado
+    audio.pause();
+    audio.currentTime = 0;
+
+    stage.style.cursor = 'pointer';
+  }
+
+  function startAudioWithRotate(){
+    clearTimers();
+    message.style.display = 'none';
+
+    // amiga isolada
+    hideStageMedia();
+    amiga.style.display = 'block';
+    amiga.style.opacity = 1;
+    amiga.classList.remove('rotate');
+
+    audio.pause();
+    audio.currentTime = 0;
+    audio.play().catch(() => { /* se bloquear, o próximo clique libera */ });
+
+    rotateTimeout = setTimeout(() => {
+      amiga.classList.add('rotate');
+    }, 4500); // 4.5s
+  }
+
+  function startInitialSequence(){
+    try {
+      if (startedOnce) return; // evita duplo disparo
+      startedOnce = true;
+
+      debug.style.display = 'none';
+      message.style.display = 'none';
+
+      // prepara
+      audio.pause(); audio.currentTime = 0;
+      video.pause(); video.currentTime = 0; video.style.display = 'none';
+      amiga.classList.remove('rotate');
+
+      // mostra caixa
+      caixa.style.display = 'block';
+      caixa.style.opacity = 1;
+      amiga.style.display = 'block';
+      amiga.style.opacity = 0;
+
+      startConfetti();
+
+      requestAnimationFrame(() => {
+        amiga.style.opacity = 1;  // amiga entra
+        caixa.style.opacity = 0;  // caixa sai
+      });
+
+      setTimeout(() => {
+        stopConfetti();
+        caixa.style.display = 'none';
+
+        // inicia áudio e rotação aos 4.5s
+        audio.currentTime = 0;
+        audio.play().catch(() => {});
+        rotateTimeout = setTimeout(() => amiga.classList.add('rotate'), 4500);
+      }, 1500);
+
+    } catch (err) {
+      showDebug("ERRO NA SEQUÊNCIA:\n" + err);
+    }
+  }
+
+  // áudio termina -> vídeo começa (SEM mensagem ainda)
+  audio.addEventListener('ended', () => {
+    clearTimers();
+    amiga.style.display = 'none';
+
+    video.currentTime = 0;
+    video.style.display = 'block';
+    video.play().catch(() => {
+      // fallback se o navegador encrencar
+      video.controls = true;
+    });
+  });
+
+  // vídeo termina -> mensagem isolada
+  video.addEventListener('ended', () => {
+    hideStageMedia();
+    message.style.display = 'block';
+    startedOnce = false; // permite reiniciar pelo retry (ou até pelo stage, se quiser)
+  });
+
+  // Clique inicial: capturar no stage (não depende do PNG)
+  stage.addEventListener('pointerdown', () => {
+    // só inicia se ainda está na “tela da caixa”
+    if (message.style.display === 'block') return;
+    if (video.style.display === 'block') return;
+    if (amiga.style.display === 'block' && amiga.style.opacity === '1' && caixa.style.display === 'none') return;
+    startInitialSequence();
+  });
+
+  // Loop eterno (mensagem -> amiga isolada + áudio)
+  retry.addEventListener('click', (e) => {
+    e.stopPropagation();
+    message.style.display = 'none';
+    startedOnce = false; // libera
+    startAudioWithRotate();
+  });
+
+  // estado inicial
+  resetToBox();
+})();
+</script>
+
+</body>
+</html>
